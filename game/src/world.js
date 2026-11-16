@@ -15,8 +15,10 @@ export const SITES = {
   B: { x: 17, z: -8, label: 'B' },
 };
 export const SPAWNS = {
-  vanguard: [[-14, 11], [-8, 12], [-2, 12], [4, 12], [10, 11], [16, 12]],
-  cinder: [[-16, -11], [-8, -12], [0, -12], [8, -12], [16, -11], [-20, -6]],
+  // 5v5: vanguard[0] is the player, vanguard[1..4] the 4 friendly bots;
+  // cinder[0..4] are the 5 Dockwatch bots.
+  vanguard: [[-14, 11], [-8, 12], [-2, 12], [4, 12], [10, 11]],
+  cinder: [[-16, -11], [-8, -12], [0, -12], [8, -12], [16, -11]],
 };
 // Waypoint graph bots walk: spawn -> mid/lanes -> sites. Edges are implicit:
 // each node lists its neighbours by index. Nodes 20-22 are the Back Lane,
@@ -117,6 +119,22 @@ function decalTexture(letter, sub, fg, accent) {
     g.fillStyle = fg; g.textAlign = 'center';
     g.font = 'bold 120px sans-serif'; g.fillText(letter, w / 2, h / 2 + 20);
     g.font = 'bold 26px sans-serif'; g.fillText(sub, w / 2, h / 2 + 74);
+  });
+}
+
+// The player's tag, painted big in amber with a cyan sub-line: the same
+// procedural canvas style as the site decals, no external asset.
+function nameTexture() {
+  return canvasTexture(512, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = '#ffb02e'; g.lineWidth = 8; g.strokeRect(8, 8, w - 16, h - 16);
+    g.textAlign = 'center';
+    g.font = 'bold 92px sans-serif';
+    g.lineWidth = 12; g.strokeStyle = '#0a0f16';
+    g.strokeText('ox90_666', w / 2, h / 2 + 8);
+    g.fillStyle = '#ffb02e'; g.fillText('ox90_666', w / 2, h / 2 + 8);
+    g.font = 'bold 28px sans-serif';
+    g.fillStyle = '#27c8e8'; g.fillText('T I D E B R E A K', w / 2, h / 2 + 62);
   });
 }
 
@@ -400,6 +418,12 @@ export function createWorld(scene) {
   }
   floorDecal(decalTexture('A', 'CRANE YARD', '#27c8e8', '#27c8e8'), -17, -8, 3.4, 3.4);
   floorDecal(decalTexture('B', 'WAREHOUSE', '#ff6b35', '#ff6b35'), 17, -8, 3.4, 3.4);
+  // ox90_666 floor paint: the player's tag, big on the Mid floor where every
+  // round crosses, and again on the spawn approach. The Mid paint is turned
+  // 45° so it reads straight from the play camera's north-east view.
+  const nameTex = nameTexture();
+  floorDecal(nameTex, 0.5, 3, 9, 3.2, -Math.PI / 4);
+  floorDecal(nameTex, 0, 8.5, 6, 2.1);
   const hzTex = hazardTexture();
   floorDecal(hzTex, -14, -4.6, 2.4, 1.2);
   floorDecal(hzTex, 14, -4.6, 2.4, 1.2);
@@ -458,6 +482,12 @@ export function createWorld(scene) {
   poster(['LONG', 'A'], '#0e3a44', '#e6f7fb', '#27c8e8', 2.0, 3.0, -21.95, 2.6, -6, Math.PI / 2);
   poster(['SHORT', 'B'], '#4a2410', '#ffe9dc', '#ff6b35', 2.0, 3.0, 21.95, 2.6, -6, -Math.PI / 2);
   poster(['MID'], '#0d1620', '#ffb02e', '#27c8e8', 1.6, 2.4, -21.95, 2.4, 6, Math.PI / 2);
+  // ox90_666 wall posters: on the north wall beside both sites, on the east
+  // wall facing Mid, and on the south wall behind spawn.
+  poster(['ox90', '_666'], '#0d1620', '#ffb02e', '#27c8e8', 2.4, 3.6, -11, 2.6, -13.95, 0);
+  poster(['ox90', '_666'], '#0d1620', '#ffb02e', '#27c8e8', 2.4, 3.6, 11, 2.6, -13.95, 0);
+  poster(['ox90', '_666'], '#0d1620', '#ffb02e', '#27c8e8', 2.4, 3.6, 21.95, 2.6, 6, -Math.PI / 2);
+  poster(['ox90', '_666'], '#0d1620', '#ffb02e', '#27c8e8', 2.4, 3.6, 6, 2.6, 13.95, Math.PI);
 
   // ---- Busy dock: cable runs, barrels, crates, lamps (edges/corners only,
   // so lanes and bot routes stay clear) ----

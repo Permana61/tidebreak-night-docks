@@ -2,8 +2,8 @@
 // Boot and the one loop: a fixed 60 Hz simulation feeding a render at the
 // display's rate. ?shot=start|play|buy|end with &seed=N sets up a deterministic
 // frame for a capture, renders it twice, then freezes it and sets
-// window.__shotReady. Tidebreakers (you + 5 bots) attack; Dockwatch (6 bots)
-// defends. Win a round by eliminating the enemy team or by planting the spike
+// window.__shotReady. 5v5: Tidebreakers (you + 4 bots) attack; Dockwatch
+// (5 bots) defends. Win a round by eliminating the enemy team or by planting
 // and letting it detonate; lose it if the spike is defused or time runs out.
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
@@ -137,8 +137,8 @@ function stepSparks(dt) {
 // Display names for the two teams; the simulation keys stay 'vanguard' and
 // 'cinder' so the state, HUD and bots need no other changes.
 const TEAM_NAMES = { vanguard: 'Tidebreakers', cinder: 'Dockwatch' };
-const TIDE_CALLSIGNS = ['Anchor', 'Buoy', 'Current', 'Harbor', 'Tide'];
-const DOCK_CALLSIGNS = ['Crane', 'Lantern', 'Mast', 'Quay', 'Siren', 'Tug'];
+const TIDE_CALLSIGNS = ['Anchor', 'Buoy', 'Current', 'Harbor'];
+const DOCK_CALLSIGNS = ['Crane', 'Lantern', 'Mast', 'Quay', 'Siren'];
 const LANE_DECK = ['A', 'B', 'MID', 'BACK', 'A', 'B'];
 
 function shuffledDeck() {
@@ -153,10 +153,10 @@ function shuffledDeck() {
 function makeTeams() {
   const vSpawns = SPAWNS.vanguard.slice();
   const cSpawns = SPAWNS.cinder.slice();
-  const routes = ['A', 'B', 'MID', 'A', 'B'];
-  for (let i = 0; i < 5; i += 1) bots.makeBot('vanguard', TIDE_CALLSIGNS[i], vSpawns[i + 1], routes[i]);
-  const cRoutes = ['A', 'B', 'MID', 'A', 'B', 'MID'];
-  for (let i = 0; i < 6; i += 1) bots.makeBot('cinder', DOCK_CALLSIGNS[i], cSpawns[i], cRoutes[i]);
+  const routes = ['A', 'B', 'MID', 'A'];
+  for (let i = 0; i < 4; i += 1) bots.makeBot('vanguard', TIDE_CALLSIGNS[i], vSpawns[i + 1], routes[i]);
+  const cRoutes = ['A', 'B', 'MID', 'A', 'B'];
+  for (let i = 0; i < 5; i += 1) bots.makeBot('cinder', DOCK_CALLSIGNS[i], cSpawns[i], cRoutes[i]);
 }
 
 function startRound() {

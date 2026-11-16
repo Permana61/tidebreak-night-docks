@@ -5,7 +5,8 @@
 [![reward](https://make.fun/badge/threejs-fps-02/Permana61/tidebreak-night-docks/reward.svg)](https://make.fun/bounty/threejs-fps-02?utm_source=github&utm_medium=readme&utm_campaign=threejs-fps-02)
 
 A round-based tactical FPS in three.js, Counter-Strike-style, never a copy:
-two teams (Tidebreakers attack, Dockwatch defends) fight over a night
+**5v5** — you plus 4 Tidebreaker bots against 5 Dockwatch bots, 10 players
+on the field. Two teams (Tidebreakers attack, Dockwatch defends) fight over
 container terminal, short rounds won by eliminating the enemy team or by
 planting/defusing the spike, money between rounds to buy weapons, and gunfire
 where accuracy counts more than speed. Every round re-deals the bots' lanes,
@@ -34,7 +35,9 @@ stacks, painted floor decal); site B is a **warehouse interior** (roof,
 columns, pallet stacks, warm doorway light). The north wall drops open in
 the middle onto a **harbour vista** — animated water, a crane skyline, a
 moon and stars — while rain falls, puddles catch the site lights, and the
-crane floodlight hums with a faint flicker.
+crane floodlight hums with a faint flicker. The player's tag **ox90_666**
+is painted big on the Mid floor and the spawn approach, with matching
+posters on the walls beside both sites, on the east wall, and behind spawn.
 
 ## Gunplay and bots
 
