@@ -34,6 +34,12 @@ export function createHud() {
   const plantBar = $('plant-bar');
   const plantWrap = $('plant-wrap');
   const buy = $('buy');
+  const modeLabel = $('mode-label');
+  const modeNight = $('mode-night');
+  const modeDay = $('mode-day');
+  const modeRainOn = $('mode-rain-on');
+  const modeRainOff = $('mode-rain-off');
+  let currentMode = { time: 'night', rain: true };
   let hitTimer = 0;
   let dmgTimer = 0;
   let dmgNumTimer = 0;
@@ -60,6 +66,24 @@ export function createHud() {
     setBomb(text, cls) { setText(bombStatus, 'bomb', text); bombStatus.className = cls || ''; },
     setCrosshair(spread) { crosshair.style.setProperty('--gap', `${4 + spread * 400}px`); },
     setAiming(aiming) { crosshair.classList.toggle('aiming', aiming); },
+    // Mode readout in the top bar: "NIGHT • RAIN" / "DAY • CLEAR" etc.
+    setMode(text) { setText(modeLabel, 'mode', text); },
+    // Highlight the active mode buttons on the start screen.
+    setModeButtons(m) {
+      currentMode = { ...m };
+      modeNight.classList.toggle('active', m.time === 'night');
+      modeDay.classList.toggle('active', m.time === 'day');
+      modeRainOn.classList.toggle('active', m.rain);
+      modeRainOff.classList.toggle('active', !m.rain);
+    },
+    // The start-screen selector calls back with the new mode; main.js
+    // applies it live (no reload) and echoes it back via setModeButtons.
+    onModeChange(handler) {
+      modeNight.addEventListener('click', () => handler({ ...currentMode, time: 'night' }));
+      modeDay.addEventListener('click', () => handler({ ...currentMode, time: 'day' }));
+      modeRainOn.addEventListener('click', () => handler({ ...currentMode, rain: true }));
+      modeRainOff.addEventListener('click', () => handler({ ...currentMode, rain: false }));
+    },
     // Floating damage number beside the crosshair: the exact damage of the
     // last hit, in amber, red on a kill.
     showDamage(dmg, killed) {

@@ -206,7 +206,12 @@ function posterTexture(lines, bg, fg, accent) {
   });
 }
 
-export function createWorld(scene) {
+export function createWorld(scene, initialMode = { time: 'night', rain: true }) {
+  // Modes: time of day (Night / Day) and rain (on / off). Night + rain is
+  // the default look; applyMode() below swaps the whole lighting rig, sky
+  // and wetness live, so the player can change them from the start screen
+  // or mid-match (N / H keys) without a reload.
+  let mode = { time: initialMode.time === 'day' ? 'day' : 'night', rain: initialMode.rain !== false };
   const group = new THREE.Group();
   scene.add(group);
   const materials = {};
@@ -285,9 +290,10 @@ export function createWorld(scene) {
   // Harbour vista beyond the low north wall: animated water, a dark crane
   // skyline, a moon and stars. Outside the playable bounds: decor only.
   const waterTex = waterTexture();
+  const waterMat = new THREE.MeshStandardMaterial({ map: waterTex, color: 0x9fc8e8, roughness: 0.22, metalness: 0.85 });
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(36, 14),
-    new THREE.MeshStandardMaterial({ map: waterTex, color: 0x9fc8e8, roughness: 0.22, metalness: 0.85 }),
+    waterMat,
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, 0.15, -21.5);
@@ -334,7 +340,30 @@ export function createWorld(scene) {
   }
   const starGeo = new THREE.BufferGeometry();
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  group.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd6e6ff, size: 0.35, transparent: true, opacity: 0.8, sizeAttenuation: false, fog: false })));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd6e6ff, size: 0.35, transparent: true, opacity: 0.8, sizeAttenuation: false, fog: false }));
+  group.add(stars);
+  // Day sky: a sun disc and a few flat clouds, hidden at night. The moon,
+  // stars and sun are all decor outside the playable bounds.
+  const sun = new THREE.Mesh(
+    new THREE.CircleGeometry(2.6, 32),
+    new THREE.MeshBasicMaterial({ color: 0xfff6c9, fog: false }),
+  );
+  sun.position.set(18, 24, -55);
+  sun.lookAt(0, 2, 0);
+  group.add(sun);
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonGlowTex, transparent: true, depthWrite: false, fog: false, color: 0xfff2b0 }));
+  sunGlow.scale.setScalar(16);
+  sunGlow.position.copy(sun.position);
+  group.add(sunGlow);
+  const clouds = new THREE.Group();
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, fog: false });
+  for (const [cx, cy, cz, s] of [[-20, 26, -45, 6], [4, 30, -50, 8], [22, 24, -40, 5], [-2, 28, -60, 7]]) {
+    const c = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), cloudMat);
+    c.scale.set(s, s * 0.35, s * 0.5);
+    c.position.set(cx, cy, cz);
+    clouds.add(c);
+  }
+  group.add(clouds);
   // Mid container stack: two high, splitting Mid in two, with low flanks.
   box(2.4, 2.6, 2.4, 0, 1.3, -2, 'hairline');
   box(2.4, 1.2, 2.4, 0, 3.2, -2, 'hairline');
@@ -522,9 +551,10 @@ export function createWorld(scene) {
   const beam = new THREE.Mesh(new THREE.BoxGeometry(41, 0.8, 0.8), metalMat);
   beam.position.set(0, 6.9, -12); prop(beam, false);
   // Floodlight panel hung under the crane beam, over the north wall.
+  const floodPanelMat = new THREE.MeshStandardMaterial({ color: 0x1a1408, emissive: new THREE.Color('#ffc46b'), emissiveIntensity: 2.2 });
   const floodPanel = new THREE.Mesh(
     new THREE.BoxGeometry(1.6, 1.0, 0.2),
-    new THREE.MeshStandardMaterial({ color: 0x1a1408, emissive: new THREE.Color('#ffc46b'), emissiveIntensity: 2.2 }),
+    floodPanelMat,
   );
   floodPanel.position.set(0, 6.35, -11.55); group.add(floodPanel);
   // Hanging lamps: emissive shades over Mid and both sites.
@@ -556,8 +586,11 @@ export function createWorld(scene) {
   group.add(dust);
 
   // Night light: cool moonlight key, cyan fill, and a warm sky gradient.
-  scene.add(new THREE.HemisphereLight(new THREE.Color('#a8c4de'), new THREE.Color(PALETTE.canvas), 1.1));
-  scene.add(new THREE.AmbientLight(new THREE.Color('#8fa8c0'), 0.35));
+  // All lights are named so applyMode() can retune them for Day.
+  const hemi = new THREE.HemisphereLight(new THREE.Color('#a8c4de'), new THREE.Color(PALETTE.canvas), 1.1);
+  scene.add(hemi);
+  const ambient = new THREE.AmbientLight(new THREE.Color('#8fa8c0'), 0.35);
+  scene.add(ambient);
   const key = new THREE.DirectionalLight(new THREE.Color('#d6e6ff'), 2.4);
   key.position.set(14, 18, 10);
   key.target.position.set(0, 0, -3);
@@ -588,22 +621,80 @@ export function createWorld(scene) {
   warehouseLight.position.set(15, 2.6, -5.5);
   scene.add(warehouseLight);
 
+  // ---- Modes: Night / Day, Rain on / off ----
+  // Day is a different look, not just brighter: blue sky + sun, warmer
+  // ground bounce, lighter fog, floodlights off, moon/stars hidden, duller
+  // puddles. Rain off stops the falling streaks and dries the puddles out.
+  const NIGHT = {
+    bg: '#0d1620', fog: ['#0d1620', 30, 85],
+    hemiSky: '#a8c4de', hemiGround: PALETTE.canvas, hemiInt: 1.1,
+    amb: ['#8fa8c0', 0.35], keyColor: '#d6e6ff', keyInt: 2.4, keyPos: [14, 18, 10],
+    fillInt: 0.6, craneInt: 30, floodEmissive: 2.2, siteInt: 14, warehouseInt: 10,
+    stripInt: 2.4, waterColor: 0x9fc8e8, waterRough: 0.22,
+    moonVisible: true, sunVisible: false,
+  };
+  const DAY = {
+    bg: '#8fb8dd', fog: ['#a9c6de', 38, 120],
+    hemiSky: '#d5e9f7', hemiGround: '#5d6f55', hemiInt: 1.5,
+    amb: ['#ffffff', 0.55], keyColor: '#fff3cf', keyInt: 3.2, keyPos: [16, 24, 6],
+    fillInt: 0.35, craneInt: 0, floodEmissive: 0.1, siteInt: 6, warehouseInt: 4,
+    stripInt: 0.7, waterColor: 0x4d8fb8, waterRough: 0.15,
+    moonVisible: false, sunVisible: true,
+  };
+  function applyMode(next) {
+    mode = { time: next.time === 'day' ? 'day' : 'night', rain: next.rain !== false };
+    const P = mode.time === 'day' ? DAY : NIGHT;
+    scene.background = new THREE.Color(P.bg);
+    scene.fog = new THREE.Fog(new THREE.Color(P.fog[0]), P.fog[1], P.fog[2]);
+    hemi.color.set(P.hemiSky);
+    hemi.groundColor.set(P.hemiGround);
+    hemi.intensity = P.hemiInt;
+    ambient.color.set(P.amb[0]);
+    ambient.intensity = P.amb[1];
+    key.color.set(P.keyColor);
+    key.intensity = P.keyInt;
+    key.position.set(P.keyPos[0], P.keyPos[1], P.keyPos[2]);
+    fill.intensity = P.fillInt;
+    craneLight.intensity = P.craneInt;
+    floodPanelMat.emissiveIntensity = P.floodEmissive;
+    siteALight.intensity = P.siteInt;
+    siteBLight.intensity = P.siteInt;
+    warehouseLight.intensity = P.warehouseInt;
+    stripCyan.emissiveIntensity = P.stripInt;
+    stripAmber.emissiveIntensity = P.stripInt;
+    waterMat.color.set(P.waterColor);
+    waterMat.roughness = P.waterRough;
+    moon.visible = P.moonVisible;
+    moonGlow.visible = P.moonVisible;
+    stars.visible = P.moonVisible;
+    sun.visible = P.sunVisible;
+    sunGlow.visible = P.sunVisible;
+    clouds.visible = P.sunVisible;
+    dust.visible = mode.rain;
+    puddleMat.roughness = mode.rain ? 0.12 : 0.5;
+    puddleMat.opacity = mode.rain ? 0.85 : 0.4;
+    return { ...mode };
+  }
+
   // Per-frame ambience, cheap: rain falls and wraps, the harbour water
   // drifts, the crane floodlight hums with a faint flicker.
   const rainVel = 1.6;
   function update(dt, time) {
-    const pos = dustGeo.attributes.position;
-    for (let i = 0; i < dustCount; i += 1) {
-      let y = pos.getY(i) - rainVel * dt;
-      if (y < 0.2) y = 4.6;
-      pos.setY(i, y);
-      pos.setX(i, pos.getX(i) + Math.sin(time * 0.7 + i) * dt * 0.12);
+    if (mode.rain) {
+      const pos = dustGeo.attributes.position;
+      for (let i = 0; i < dustCount; i += 1) {
+        let y = pos.getY(i) - rainVel * dt;
+        if (y < 0.2) y = 4.6;
+        pos.setY(i, y);
+        pos.setX(i, pos.getX(i) + Math.sin(time * 0.7 + i) * dt * 0.12);
+      }
+      pos.needsUpdate = true;
     }
-    pos.needsUpdate = true;
     waterTex.offset.x = (time * 0.015) % 1;
     waterTex.offset.y = (time * 0.008) % 1;
-    craneLight.intensity = 30 + Math.sin(time * 13) * 1.2 + Math.sin(time * 31) * 0.8;
+    if (mode.time === 'night') craneLight.intensity = 30 + Math.sin(time * 13) * 1.2 + Math.sin(time * 31) * 0.8;
   }
 
-  return { colliders, shootables, group, update };
+  applyMode(mode); // apply the starting mode (Night + Rain by default)
+  return { colliders, shootables, group, update, applyMode, getMode: () => ({ ...mode }) };
 }

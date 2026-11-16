@@ -22,6 +22,9 @@ const FIXED_STEP = 1 / 60;
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
 const seed = Number.parseInt(params.get('seed') ?? '1', 10) || 1;
+// Game modes, also settable from the URL for deterministic captures:
+// ?time=day|night&rain=on|off. Default: Night + Rain.
+let mode = { time: params.get('time') === 'day' ? 'day' : 'night', rain: params.get('rain') !== 'off' };
 
 function mulberry32(initial) {
   let a = initial;
@@ -51,7 +54,7 @@ scene.fog = new THREE.Fog(new THREE.Color(PALETTE.canvas), 30, 85);
 const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.05, 140);
 scene.add(camera);
 
-const world = createWorld(scene);
+const world = createWorld(scene, mode);
 const bots = createBots(scene, world, random);
 const bomb = createBomb(scene);
 const grenades = createGrenades(scene, world);
@@ -65,6 +68,21 @@ raycaster.far = 90;
 const direction = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
+
+function modeLabel(m) {
+  return `${m.time === 'day' ? 'DAY' : 'NIGHT'} • ${m.rain ? 'RAIN' : 'CLEAR'}`;
+}
+function setMode(next) {
+  mode = world.applyMode(next);
+  renderer.toneMappingExposure = mode.time === 'day' ? 1.0 : 1.08;
+  hud.setMode(modeLabel(mode));
+  hud.setModeButtons(mode);
+}
+mode = world.applyMode(mode);
+renderer.toneMappingExposure = mode.time === 'day' ? 1.0 : 1.08;
+hud.setMode(modeLabel(mode));
+hud.setModeButtons(mode);
+hud.onModeChange((next) => setMode(next));
 
 const state = createState();
 const body = player.state;
@@ -530,6 +548,10 @@ function frame(now) {
         if (input.takePressed(key)) buy(['rifle', 'smg', 'shotgun', 'sniper', 'grenade'][Number(key.slice(-1)) - 1]);
       }
     }
+    // Mode toggles: N flips night/day, H flips rain on/off. Works from the
+    // start screen and mid-match; the HUD label always shows the mode.
+    if (input.takePressed('KeyN')) setMode({ ...mode, time: mode.time === 'day' ? 'night' : 'day' });
+    if (input.takePressed('KeyH')) setMode({ ...mode, rain: !mode.rain });
     accumulator += dt;
     let steps = 0;
     while (accumulator >= FIXED_STEP && steps < 5) {

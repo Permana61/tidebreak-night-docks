@@ -25,6 +25,22 @@ Space jump, **right-click aim down sights**. First team to 5 rounds wins the
 match. Rounds are 95 seconds, buy phase 10 seconds. Round ends play in
 slow motion and name the round MVP.
 
+## Game modes — Night/Day, Rain on/off
+
+Pick on the start screen (or any round-over screen), change mid-match with
+**N** (night/day) and **H** (rain on/off), or open the game with
+`?time=day&rain=off`. Default is Night + Rain.
+
+- **Night** — the classic look: moonlit navy, crane floodlight, glowing site
+  lights, moon + stars over the harbour.
+- **Day** — a real different look, not just brighter: blue sky, sun disc and
+  clouds, warmer ground bounce, lighter fog, floodlights off, moon/stars
+  hidden, duller puddles.
+- **Rain on** — rain streaks fall and puddles stay mirror-wet.
+- **Rain off (Clear)** — no rain streaks, puddles dry out to a dull sheen.
+  All four combinations work (Day+Rain, Day+Clear, Night+Rain, Night+Clear).
+  The HUD top bar always shows the mode, e.g. `DAY • CLEAR`.
+
 ## The map — Night Docks, rata kanan
 
 Four lanes, not three: Long A, Mid, Short B, and a **Back Lane** behind the

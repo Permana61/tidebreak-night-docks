@@ -47,6 +47,7 @@
 
   #topbar { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; font-family: var(--font-readout); font-size: 15px; }
   #topbar b { color: var(--ink); font-weight: 600; }
+  #mode-label { font-size: 12px; letter-spacing: .12em; color: var(--accent); border: 1px solid var(--hairline); border-radius: 4px; padding: 3px 8px; background: color-mix(in srgb, var(--surface) 80%, transparent); }
   #timer-value { font-size: 22px; }
   #timer-value.urgent { color: var(--ember); }
   #bomb-status { font-size: 12px; letter-spacing: .08em; color: var(--muted); }
@@ -83,6 +84,13 @@
   .panel p { margin: 0 0 24px; font-size: 16px; line-height: 1.5; color: var(--muted); }
   #play { font: inherit; font-weight: 500; padding: 12px 16px; border: 1px solid var(--accent); border-radius: var(--radius-control); background: var(--accent); color: var(--canvas); cursor: pointer; }
   #play:hover { background: var(--ink); border-color: var(--ink); }
+  #modes { margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hairline); display: grid; gap: 10px; }
+  .mode-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+  .mode-row > span { width: 44px; }
+  .mode-btn { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-control); background: transparent; color: var(--ink); cursor: pointer; }
+  .mode-btn:hover { border-color: var(--ink); }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: var(--canvas); font-weight: 600; }
+  .mode-hint { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
   .keys { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
   .keys kbd { min-width: 24px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--radius-panel); font-family: var(--font-readout); font-size: 12px; color: var(--ink); text-align: center; }
 </style>
@@ -95,7 +103,7 @@
   <div id="crosshair"><i></i><i></i><i></i><i></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="dmg-number"></div>
-  <div id="topbar"><span id="round-value">ROUND 1</span><b id="score-value">0 — 0</b><span id="timer-value">100</span><span id="bomb-status" class="idle">SPIKE NOT PLANTED</span></div>
+  <div id="topbar"><span id="round-value">ROUND 1</span><b id="score-value">0 — 0</b><span id="timer-value">100</span><span id="bomb-status" class="idle">SPIKE NOT PLANTED</span><span id="mode-label">NIGHT • RAIN</span></div>
   <div id="ammo"><span id="ammo-mag">12</span><span id="ammo-reserve">/ 48</span></div>
   <div id="weapon-name">S9 Sparrow</div>
   <div id="health"><span id="health-value">100</span><div id="health-bar-wrap"><div id="health-bar"></div></div></div>
@@ -110,6 +118,11 @@
     <h1 id="overlay-title">TIDEBREAK</h1>
     <p id="overlay-copy">Night Docks — Tidebreakers attack, Dockwatch defends. Plant the spike at A or B, or wipe the enemy team. Click to play.</p>
     <button id="play" type="button">Click to play</button>
+    <div id="modes">
+      <div class="mode-row"><span>Time</span><button type="button" id="mode-night" class="mode-btn active">🌙 Night</button><button type="button" id="mode-day" class="mode-btn">☀️ Day</button></div>
+      <div class="mode-row"><span>Rain</span><button type="button" id="mode-rain-on" class="mode-btn active">🌧 Rain</button><button type="button" id="mode-rain-off" class="mode-btn">☀ Clear</button></div>
+      <p class="mode-hint">Also in game: <kbd>N</kbd> night/day, <kbd>H</kbd> rain on/off. Applies instantly.</p>
+    </div>
     <ul class="keys">
       <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move &nbsp; <kbd>Mouse</kbd> Look &nbsp; <kbd>Click</kbd> Fire &nbsp; <kbd>RMB</kbd> Aim</li>
       <li><kbd>R</kbd> Reload &nbsp; <kbd>G</kbd> Frag grenade &nbsp; <kbd>E</kbd> Plant / defuse</li>
