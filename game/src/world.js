@@ -19,18 +19,21 @@ export const SPAWNS = {
   cinder: [[-16, -11], [-8, -12], [0, -12], [8, -12], [16, -11], [-20, -6]],
 };
 // Waypoint graph bots walk: spawn -> mid/lanes -> sites. Edges are implicit:
-// each node lists its neighbours by index.
+// each node lists its neighbours by index. Nodes 20-22 are the Back Lane,
+// a third rotation behind the sites, used by the flanker.
 export const WAYPOINTS = [
   { x: -14, z: 11 }, { x: -8, z: 12 }, { x: -2, z: 12 }, { x: 4, z: 12 }, { x: 10, z: 11 },
   { x: -16, z: 2 }, { x: -8, z: 2 }, { x: 0, z: 2 }, { x: 8, z: 2 }, { x: 16, z: 2 },
   { x: -17, z: -8 }, { x: 17, z: -8 },
   { x: -16, z: -11 }, { x: -8, z: -12 }, { x: 0, z: -12 }, { x: 8, z: -12 }, { x: 16, z: -11 },
   { x: 0, z: -6 }, { x: -12, z: -6 }, { x: 12, z: -6 },
+  { x: -17, z: -11.5 }, { x: 0, z: -11.5 }, { x: 17, z: -11.5 },
 ];
 export const ROUTES = {
   A: [5, 18, 10],
   B: [9, 19, 11],
   MID: [7, 17, 14],
+  BACK: [13, 20, 21, 22, 11],
 };
 
 // Deterministic pseudo-random so the same seed renders the same map.
@@ -86,6 +89,45 @@ function floorTexture() {
     g.beginPath(); g.moveTo(0, 12); g.lineTo(w, 12); g.stroke();
     g.beginPath(); g.moveTo(0, h - 12); g.lineTo(w, h - 12); g.stroke();
   }, 6, 4);
+}
+
+function waterTexture() {
+  return canvasTexture(256, 256, (g, w, h) => {
+    const r = srand(53);
+    g.fillStyle = '#0a1a26'; g.fillRect(0, 0, w, h);
+    // Moonlit wave lines.
+    for (let i = 0; i < 42; i += 1) {
+      g.strokeStyle = r() > 0.5 ? 'rgba(150,200,235,0.16)' : 'rgba(90,140,175,0.12)';
+      g.lineWidth = 2 + r() * 2;
+      const y = r() * h; const x = r() * w; const len = 20 + r() * 60;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + len, y + (r() - 0.5) * 8); g.stroke();
+    }
+    // Amber harbour-light glints.
+    for (let i = 0; i < 10; i += 1) {
+      g.fillStyle = 'rgba(255,176,46,0.14)';
+      g.beginPath(); g.ellipse(r() * w, r() * h, 8 + r() * 22, 3 + r() * 5, 0, 0, Math.PI * 2); g.fill();
+    }
+  }, 5, 3);
+}
+
+function decalTexture(letter, sub, fg, accent) {
+  return canvasTexture(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = accent; g.lineWidth = 10; g.strokeRect(10, 10, w - 20, h - 20);
+    g.fillStyle = fg; g.textAlign = 'center';
+    g.font = 'bold 120px sans-serif'; g.fillText(letter, w / 2, h / 2 + 20);
+    g.font = 'bold 26px sans-serif'; g.fillText(sub, w / 2, h / 2 + 74);
+  });
+}
+
+function hazardTexture() {
+  return canvasTexture(256, 128, (g, w, h) => {
+    g.fillStyle = '#141c26'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#ffb02e';
+    for (let x = -h; x < w; x += 32) {
+      g.save(); g.translate(x, 0); g.rotate(Math.PI / 4); g.fillRect(0, -h, 16, h * 3); g.restore();
+    }
+  });
 }
 
 function wallTexture() {
@@ -212,12 +254,69 @@ export function createWorld(scene) {
     group.add(post);
   }
 
-  // Floor and outer walls, 44 x 28 m, 5 m high, open night sky.
+  // Floor and outer walls, 44 x 28 m, 5 m high, open night sky — except the
+  // north wall's centre, which drops to 2.2 m so the harbour vista (water,
+  // skyline, moon) reads from Mid and both sites.
   box(44.4, 0.4, 28.4, 0, -0.2, 0, 'canvas');
   box(0.4, 5, 28.4, -22.2, 2.5, 0, 'surface');
   box(0.4, 5, 28.4, 22.2, 2.5, 0, 'surface');
-  box(44.4, 5, 0.4, 0, 2.5, -14.2, 'surface');
+  box(16.2, 5, 0.4, -14.1, 2.5, -14.2, 'surface');
+  box(12, 2.2, 0.4, 0, 1.1, -14.2, 'surface');
+  box(16.2, 5, 0.4, 14.1, 2.5, -14.2, 'surface');
   box(44.4, 5, 0.4, 0, 2.5, 14.2, 'surface');
+  // Harbour vista beyond the low north wall: animated water, a dark crane
+  // skyline, a moon and stars. Outside the playable bounds: decor only.
+  const waterTex = waterTexture();
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(36, 14),
+    new THREE.MeshStandardMaterial({ map: waterTex, color: 0x9fc8e8, roughness: 0.22, metalness: 0.85 }),
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(0, 0.15, -21.5);
+  group.add(water);
+  const skylineMat = new THREE.MeshStandardMaterial({ color: 0x060b12, roughness: 1, metalness: 0 });
+  function skylineBox(w, h, d, x, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), skylineMat);
+    m.position.set(x, h / 2, z);
+    group.add(m);
+    return m;
+  }
+  skylineBox(6, 9, 3, -14, -27); skylineBox(4, 12, 3, -6, -28); skylineBox(8, 6, 3, 3, -27);
+  skylineBox(5, 10, 3, 11, -28); skylineBox(7, 7, 3, 18, -27);
+  const skyCraneLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 11, 8), skylineMat);
+  skyCraneLeg.position.set(-10, 5.5, -26); group.add(skyCraneLeg);
+  const skyCraneBeam = new THREE.Mesh(new THREE.BoxGeometry(12, 0.6, 0.6), skylineMat);
+  skyCraneBeam.position.set(-6, 10.5, -26); group.add(skyCraneBeam);
+  const moon = new THREE.Mesh(
+    new THREE.CircleGeometry(3, 32),
+    new THREE.MeshBasicMaterial({ color: 0xe8f2ff, fog: false }),
+  );
+  moon.position.set(-18, 22, -55);
+  moon.lookAt(0, 2, 0);
+  group.add(moon);
+  const moonGlowTex = canvasTexture(128, 128, (g, w, h) => {
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(220,235,255,0.55)'); grad.addColorStop(1, 'rgba(220,235,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  });
+  const moonGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonGlowTex, transparent: true, depthWrite: false, fog: false }));
+  moonGlow.scale.setScalar(20);
+  moonGlow.position.copy(moon.position);
+  group.add(moonGlow);
+  const starCount = 300;
+  const starPos = new Float32Array(starCount * 3);
+  const sr = srand(77);
+  for (let i = 0; i < starCount; i += 1) {
+    const a = sr() * Math.PI * 2;
+    const e = 0.15 + sr() * 1.2;
+    const rad = 60 + sr() * 25;
+    starPos[i * 3] = Math.cos(a) * Math.cos(e) * rad;
+    starPos[i * 3 + 1] = Math.sin(e) * rad;
+    starPos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * rad;
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  group.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd6e6ff, size: 0.35, transparent: true, opacity: 0.8, sizeAttenuation: false, fog: false })));
   // Mid container stack: two high, splitting Mid in two, with low flanks.
   box(2.4, 2.6, 2.4, 0, 1.3, -2, 'hairline');
   box(2.4, 1.2, 2.4, 0, 3.2, -2, 'hairline');
@@ -236,8 +335,50 @@ export function createWorld(scene) {
   box(2.0, 1.0, 1.0, 6, 0.5, 8, 'hairline');
   box(1.2, 2.2, 1.2, -4, 1.1, -8, 'surface');
   box(1.2, 2.2, 1.2, 4, 1.1, -8, 'surface');
-  // Back lane: a low container row behind both sites.
-  box(6.0, 1.2, 1.2, 0, 0.6, -11.5, 'surface');
+  // Back lane: a low container row behind both sites, moved to the north
+  // edge so the lane itself (z = -11.5) stays open for the third rotation.
+  box(6.0, 1.2, 1.2, 0, 0.6, -13.0, 'surface');
+  box(1.4, 1.0, 1.4, -8, 0.5, -12.2, 'hairline');
+  box(1.4, 1.0, 1.4, 8, 0.5, -12.2, 'hairline');
+  // Tidebreaker spawn cover: a low wall so the spawn is not peeked straight
+  // down Mid from the north.
+  box(6.0, 1.2, 0.6, 0, 0.6, 10.2, 'hairline');
+  // ---- Verticality: climb stack + catwalk ----
+  // Stepped crates (0.6 m rises, jumpable) lead up to a catwalk that runs
+  // along the north wall above the sites, with a railing on its back edge.
+  // Bots stay on the ground; the catwalk is a player perch that overlooks
+  // both sites and is still hittable from below.
+  box(1.2, 0.6, 1.2, 8, 0.3, -9.0, 'hairline');
+  box(1.2, 1.2, 1.2, 8, 0.6, -10.2, 'hairline');
+  box(1.2, 1.8, 1.2, 8, 0.9, -11.4, 'hairline');
+  box(16, 0.2, 1.0, 0, 2.5, -13.1, 'surface'); // catwalk slab, top at 2.6
+  box(16, 1.0, 0.08, 0, 3.1, -13.55, 'surface'); // back railing
+  box(0.3, 2.5, 0.3, -7.5, 1.25, -13.1, 'surface'); // catwalk posts
+  box(0.3, 2.5, 0.3, 7.5, 1.25, -13.1, 'surface');
+  // ---- Site A: crane yard ----
+  // A two-high container stack, a crane hook hanging over the site, and a
+  // painted floor decal marking the yard.
+  box(2.4, 1.2, 2.4, -19.5, 0.6, -10, 'hairline');
+  box(2.4, 1.2, 2.4, -19.5, 1.8, -10, 'hairline');
+  const hookCable = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4, 8), pipeMat);
+  hookCable.position.set(-14, 5.2, -12); prop(hookCable, false);
+  const hook = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), metalMat);
+  hook.position.set(-14, 3.3, -12); prop(hook, true);
+  // ---- Site B: warehouse interior ----
+  // A roof slab over B with columns, pallet stacks inside, warm interior
+  // light spilling out of the doorway.
+  box(9, 0.25, 7, 17, 4.3, -8, 'surface'); // roof
+  box(0.4, 4.3, 0.4, 13.2, 2.15, -5.2, 'surface');
+  box(0.4, 4.3, 0.4, 20.8, 2.15, -10.8, 'surface');
+  function pallet(x, z, y) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.16, 1.4),
+      new THREE.MeshStandardMaterial({ color: 0x6b5a3e, roughness: 0.9, metalness: 0 }));
+    m.position.set(x, y, z); prop(m, true);
+  }
+  pallet(19.2, -6.2, 0.08); pallet(19.2, -6.2, 0.4); pallet(19.2, -6.2, 0.72);
+  box(1.1, 0.9, 1.1, 19.2, 1.25, -6.2, 'hairline');
+  pallet(14.6, -10.6, 0.08); pallet(14.6, -10.6, 0.4);
+  box(1.1, 0.9, 1.1, 14.6, 0.93, -10.6, 'hairline');
   // Dock office blocks: new corner fights on the west and east approaches.
   box(2.0, 2.4, 3.0, -19, 1.2, -2, 'surface');
   box(2.0, 2.4, 3.0, 19, 1.2, -2, 'surface');
@@ -245,6 +386,63 @@ export function createWorld(scene) {
   box(4.0, 1.0, 1.0, 0, 0.5, -8, 'hairline');
   siteMarker(SITES.A, 'teal');
   siteMarker(SITES.B, 'ember');
+  // Painted floor decals: a big letter on each site so the objective reads
+  // from across the map, and hazard chevrons at both site entrances.
+  function floorDecal(tex, x, z, w, d, rotY = 0) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, depthWrite: false }),
+    );
+    m.rotation.x = -Math.PI / 2; m.rotation.z = rotY;
+    m.position.set(x, 0.03, z);
+    group.add(m);
+    return m;
+  }
+  floorDecal(decalTexture('A', 'CRANE YARD', '#27c8e8', '#27c8e8'), -17, -8, 3.4, 3.4);
+  floorDecal(decalTexture('B', 'WAREHOUSE', '#ff6b35', '#ff6b35'), 17, -8, 3.4, 3.4);
+  const hzTex = hazardTexture();
+  floorDecal(hzTex, -14, -4.6, 2.4, 1.2);
+  floorDecal(hzTex, 14, -4.6, 2.4, 1.2);
+  // Wet-puddle reflection patches: near-mirror metal that catches the site
+  // and crane lights, so the rain-wet dock reads as wet.
+  const puddleMat = new THREE.MeshStandardMaterial({ color: 0x16283a, roughness: 0.12, metalness: 0.95, transparent: true, opacity: 0.85 });
+  function puddle(x, z, w, d, rotY) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), puddleMat);
+    m.rotation.x = -Math.PI / 2; m.rotation.z = rotY;
+    m.position.set(x, 0.025, z);
+    group.add(m);
+  }
+  puddle(0, 4, 3.2, 1.8, 0.3); puddle(-10, -4, 2.6, 1.5, -0.5); puddle(10, 0, 2.8, 1.6, 0.9);
+  puddle(-15, 6, 2.2, 1.4, 0.1); puddle(15, -11, 2.4, 1.4, -0.2);
+  // Emissive light strips on the mid stack and the B containers: the dock's
+  // working lights, glowing cyan and amber against the night.
+  const stripCyan = new THREE.MeshStandardMaterial({ color: 0x06222b, emissive: new THREE.Color('#27c8e8'), emissiveIntensity: 2.4 });
+  const stripAmber = new THREE.MeshStandardMaterial({ color: 0x2b1602, emissive: new THREE.Color('#ffb02e'), emissiveIntensity: 2.4 });
+  function strip(mat, w, h, x, y, z, rotY) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), mat);
+    m.position.set(x, y, z); m.rotation.y = rotY;
+    group.add(m);
+  }
+  strip(stripCyan, 2.0, 0.12, 0, 2.0, -0.75, 0);
+  strip(stripAmber, 1.6, 0.12, -19.5, 1.25, -8.75, 0);
+  strip(stripCyan, 1.6, 0.12, 14, 0.85, -4.15, 0);
+  // Buoys bobbing by the water gap, and a chain hanging from the crane beam.
+  function buoy(x, z) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.35, 14, 10),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.ember), roughness: 0.5, metalness: 0.1 }));
+    m.position.set(x, 0.35, z); prop(m, true);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 20),
+      new THREE.MeshStandardMaterial({ color: 0xe9f2f7, roughness: 0.6 }));
+    band.rotation.x = Math.PI / 2; band.position.set(x, 0.35, z); group.add(band);
+  }
+  buoy(-4, -13.4); buoy(4, -13.4);
+  const chainMat = new THREE.MeshStandardMaterial({ color: 0x5a646e, roughness: 0.35, metalness: 0.9 });
+  for (let i = 0; i < 5; i += 1) {
+    const link = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.035, 8, 14), chainMat);
+    link.position.set(10, 6.5 - i * 0.26, -12);
+    link.rotation.y = i % 2 ? Math.PI / 2 : 0;
+    group.add(link);
+  }
 
   // ---- Wall decor: posters, signs and stencils (flat, no collision) ----
   // North wall (behind the sites), facing south into the map.
@@ -293,11 +491,12 @@ export function createWorld(scene) {
   legR.position.set(20, 3.5, -12); prop(legR, true);
   const beam = new THREE.Mesh(new THREE.BoxGeometry(41, 0.8, 0.8), metalMat);
   beam.position.set(0, 6.9, -12); prop(beam, false);
+  // Floodlight panel hung under the crane beam, over the north wall.
   const floodPanel = new THREE.Mesh(
     new THREE.BoxGeometry(1.6, 1.0, 0.2),
     new THREE.MeshStandardMaterial({ color: 0x1a1408, emissive: new THREE.Color('#ffc46b'), emissiveIntensity: 2.2 }),
   );
-  floodPanel.position.set(0, 0.7, -0.75); group.add(floodPanel);
+  floodPanel.position.set(0, 6.35, -11.55); group.add(floodPanel);
   // Hanging lamps: emissive shades over Mid and both sites.
   function lamp(x, y, z, color) {
     const shadeMesh = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.4, 12, 1, true),
@@ -354,6 +553,27 @@ export function createWorld(scene) {
   const siteBLight = new THREE.PointLight(new THREE.Color(PALETTE.ember), 14, 10, 1.8);
   siteBLight.position.set(17, 3.2, -8);
   scene.add(siteBLight);
+  // Warm spill from inside the B warehouse doorway.
+  const warehouseLight = new THREE.PointLight(new THREE.Color('#ff9a3d'), 10, 8, 1.8);
+  warehouseLight.position.set(15, 2.6, -5.5);
+  scene.add(warehouseLight);
 
-  return { colliders, shootables, group };
+  // Per-frame ambience, cheap: rain falls and wraps, the harbour water
+  // drifts, the crane floodlight hums with a faint flicker.
+  const rainVel = 1.6;
+  function update(dt, time) {
+    const pos = dustGeo.attributes.position;
+    for (let i = 0; i < dustCount; i += 1) {
+      let y = pos.getY(i) - rainVel * dt;
+      if (y < 0.2) y = 4.6;
+      pos.setY(i, y);
+      pos.setX(i, pos.getX(i) + Math.sin(time * 0.7 + i) * dt * 0.12);
+    }
+    pos.needsUpdate = true;
+    waterTex.offset.x = (time * 0.015) % 1;
+    waterTex.offset.y = (time * 0.008) % 1;
+    craneLight.intensity = 30 + Math.sin(time * 13) * 1.2 + Math.sin(time * 31) * 0.8;
+  }
+
+  return { colliders, shootables, group, update };
 }

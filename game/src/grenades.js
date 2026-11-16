@@ -17,10 +17,11 @@ export function createGrenades(scene, world) {
     new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0, depthWrite: false }),
   );
   scene.add(blast);
-  const live = { active: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), fuse: 0, blastT: 0 };
-  function throwGrenade(from, dir) {
+  const live = { active: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(), fuse: 0, blastT: 0, owner: null };
+  function throwGrenade(from, dir, owner = null) {
     if (live.active) return false;
     live.active = true;
+    live.owner = owner;
     live.pos.copy(from);
     live.vel.copy(dir).multiplyScalar(14);
     live.vel.y += 4;
@@ -28,7 +29,7 @@ export function createGrenades(scene, world) {
     mesh.visible = true;
     return true;
   }
-  // Returns {x, z, damage} on detonation, else null.
+  // Returns {x, z, damage, owner} on detonation, else null.
   function step(dt) {
     if (live.blastT > 0) {
       live.blastT -= dt;
@@ -51,7 +52,7 @@ export function createGrenades(scene, world) {
     blast.position.copy(live.pos);
     blast.scale.setScalar(0.1);
     live.blastT = 0.25;
-    return { x: live.pos.x, z: live.pos.z, damage: GRENADE.damage, radius: GRENADE.radius };
+    return { x: live.pos.x, z: live.pos.z, damage: GRENADE.damage, radius: GRENADE.radius, owner: live.owner };
   }
   function damageAt(x, z, px, pz) {
     const d = Math.hypot(x - px, z - pz);

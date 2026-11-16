@@ -20,10 +20,34 @@ node serve.ts
 
 WASD move, mouse look, click fire, R reload, G frag grenade, E plant/defuse
 the spike at site A or B, 1–5 buy weapons in the buy phase, Ctrl crouch,
-Space jump. First team to 5 rounds wins the match. Rounds are 95 seconds,
-buy phase 10 seconds.
+Space jump, **right-click aim down sights**. First team to 5 rounds wins the
+match. Rounds are 95 seconds, buy phase 10 seconds. Round ends play in
+slow motion and name the round MVP.
 
-## Structure
+## The map — Night Docks, rata kanan
+
+Four lanes, not three: Long A, Mid, Short B, and a **Back Lane** behind the
+sites that the Dockwatch flanker uses to come around behind the attackers.
+**Verticality**: a stepped crate stack climbs to a **catwalk** above both
+sites. Site A is a **crane yard** (gantry crane, hanging hook, container
+stacks, painted floor decal); site B is a **warehouse interior** (roof,
+columns, pallet stacks, warm doorway light). The north wall drops open in
+the middle onto a **harbour vista** — animated water, a crane skyline, a
+moon and stars — while rain falls, puddles catch the site lights, and the
+crane floodlight hums with a faint flicker.
+
+## Gunplay and bots
+
+- **Recoil patterns**: every weapon kicks in a learnable per-shot pattern
+  that resets on a fresh magazine; bloom punishes sustained fire.
+- **ADS**: right-click zooms (per-weapon FOV, the sniper scopes to 30°) and
+  centres the gun; spread drops while aiming.
+- **Reload animation**: the gun dips and tilts while the magazine seats.
+- **Feedback**: impact sparks on wall hits, tracers, floating damage
+  numbers, team-coloured killfeed with HEADSHOT tags, hitmarkers.
+- **Bots**: peek-strafe while duelling, aim-settle on first sight (a player
+  who peeks first wins), investigate gunfire they hear, spend one frag at
+  long range, and a flanker who takes the Back Lane every round.
 
 - `game/index.html` — page + HUD (health, ammo, money, timer, score, bomb)
 - `game/src/main.js` — fixed-step loop, rounds, economy, plant/defuse, lane shuffle

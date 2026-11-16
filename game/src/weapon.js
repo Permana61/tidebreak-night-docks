@@ -6,11 +6,11 @@ import * as THREE from 'three';
 import { PALETTE } from './palette.js';
 
 export const WEAPONS = {
-  sidearm: { name: 'S9 Sparrow', price: 0, damage: 24, headMult: 2, mag: 12, reserve: 48, gap: 0.16, reload: 1.4, spreadStill: 0.003, spreadMove: 0.02, auto: false, range: 45 },
-  rifle: { name: 'KR-47 Kestrel', price: 2600, damage: 33, headMult: 2, mag: 30, reserve: 90, gap: 0.1, reload: 1.9, spreadStill: 0.0022, spreadMove: 0.028, auto: true, range: 80 },
-  smg: { name: 'VX-9 Wasp', price: 1300, damage: 21, headMult: 2, mag: 28, reserve: 112, gap: 0.07, reload: 1.6, spreadStill: 0.004, spreadMove: 0.024, auto: true, range: 40 },
-  shotgun: { name: 'M590 Dockside', price: 1700, damage: 14, headMult: 1.6, mag: 6, reserve: 24, gap: 0.8, reload: 2.4, spreadStill: 0.02, spreadMove: 0.03, auto: false, pellets: 7, range: 22 },
-  sniper: { name: 'LR-80 Nightowl', price: 4000, damage: 100, headMult: 2, mag: 5, reserve: 15, gap: 1.1, reload: 2.8, spreadStill: 0.0008, spreadMove: 0.05, auto: false, range: 90 },
+  sidearm: { name: 'S9 Sparrow', price: 0, damage: 24, headMult: 2, mag: 12, reserve: 48, gap: 0.16, reload: 1.4, spreadStill: 0.003, spreadMove: 0.02, auto: false, range: 45, adsFov: 62, pattern: [[0.010, 0], [0.011, 0.002], [0.010, -0.002], [0.012, 0.001]] },
+  rifle: { name: 'KR-47 Kestrel', price: 2600, damage: 33, headMult: 2, mag: 30, reserve: 90, gap: 0.1, reload: 1.9, spreadStill: 0.0022, spreadMove: 0.028, auto: true, range: 80, adsFov: 55, pattern: [[0.011, 0], [0.012, 0.002], [0.013, -0.002], [0.012, 0.003], [0.014, -0.003], [0.013, 0.002], [0.012, -0.001], [0.014, 0.001]] },
+  smg: { name: 'VX-9 Wasp', price: 1300, damage: 21, headMult: 2, mag: 28, reserve: 112, gap: 0.07, reload: 1.6, spreadStill: 0.004, spreadMove: 0.024, auto: true, range: 40, adsFov: 60, pattern: [[0.008, 0.001], [0.009, -0.002], [0.008, 0.002], [0.010, -0.001], [0.009, 0.003], [0.010, -0.002]] },
+  shotgun: { name: 'M590 Dockside', price: 1700, damage: 14, headMult: 1.6, mag: 6, reserve: 24, gap: 0.8, reload: 2.4, spreadStill: 0.02, spreadMove: 0.03, auto: false, pellets: 7, range: 22, adsFov: 65, pattern: [[0.03, 0]] },
+  sniper: { name: 'LR-80 Nightowl', price: 4000, damage: 100, headMult: 2, mag: 5, reserve: 15, gap: 1.1, reload: 2.8, spreadStill: 0.0008, spreadMove: 0.05, auto: false, range: 90, adsFov: 30, pattern: [[0.045, 0]] },
 };
 export const GRENADE = { name: 'Frag Grenade', price: 300, damage: 90, radius: 5.5, fuse: 1.6 };
 
@@ -139,9 +139,14 @@ export function createWeapon(camera) {
   const flashLight = new THREE.PointLight(new THREE.Color(PALETTE.accent), 0, 5);
   flashLight.position.set(0.09, -0.18, -0.8);
   camera.add(flashLight);
+  // A dim cool fill light on the camera, so the view-model gun reads as
+  // dark metal instead of a black silhouette against the night map.
+  const rigLight = new THREE.PointLight(new THREE.Color('#9fc8e8'), 3, 2.5, 2);
+  rigLight.position.set(0.15, 0.05, -0.35);
+  camera.add(rigLight);
 
   let def = WEAPONS.sidearm;
-  const state = { id: 'sidearm', mag: def.mag, reserve: def.reserve, cooldown: 0, reloadLeft: 0, flash: 0, kick: 0, bloom: 0, grenades: 0 };
+  const state = { id: 'sidearm', mag: def.mag, reserve: def.reserve, cooldown: 0, reloadLeft: 0, flash: 0, kick: 0, bloom: 0, grenades: 0, shotIndex: 0, aiming: false };
 
   function step(dt) {
     state.cooldown = Math.max(0, state.cooldown - dt);
@@ -150,16 +155,30 @@ export function createWeapon(camera) {
     state.kick += (0 - state.kick) * Math.min(1, dt * 14);
     model.position.z = -0.5 + state.kick;
     model.rotation.x = state.kick * 2.2;
+    // Aim-down-sights: the rig slides to the centre of the screen.
+    const aimX = state.aiming ? 0 : 0.24;
+    const aimY = state.aiming ? -0.175 : -0.24;
+    model.position.x += (aimX - model.position.x) * Math.min(1, dt * 18);
+    model.position.y += (aimY - model.position.y) * Math.min(1, dt * 18);
+    model.rotation.y += ((state.aiming ? 0 : 0.28) - model.rotation.y) * Math.min(1, dt * 18);
     flash.visible = state.flash > 0;
     flash.rotation.z = state.flash * 30;
     flashLight.intensity = state.flash > 0 ? 18 : 0;
     if (state.reloadLeft > 0) {
       state.reloadLeft = Math.max(0, state.reloadLeft - dt);
+      // Reload animation: dip the gun down and tilt it, then lift it back
+      // as the fresh magazine seats.
+      const phase = 1 - state.reloadLeft / def.reload;
+      const dip = Math.sin(phase * Math.PI);
+      model.position.y -= dip * 0.14;
       model.rotation.x = -0.55 * Math.min(1, (def.reload - state.reloadLeft) * 2);
+      model.rotation.z = -0.04 - dip * 0.35;
       if (state.reloadLeft === 0) {
         const take = Math.min(def.mag - state.mag, state.reserve);
         state.mag += take;
         state.reserve -= take;
+        state.shotIndex = 0; // a fresh mag resets the recoil pattern
+        model.rotation.z = -0.04;
       }
     }
   }
@@ -174,15 +193,24 @@ export function createWeapon(camera) {
       state.flash = 0.06;
       state.kick = 0.055;
       state.bloom = Math.min(1, state.bloom + 0.12);
+      // Recoil pattern: the kick follows the weapon's table by shot index,
+      // so sustained fire climbs and drifts in a learnable shape.
+      const pattern = def.pattern[state.shotIndex % def.pattern.length];
+      state.shotIndex += 1;
+      return { pitch: pattern[0], yaw: pattern[1] };
     },
     takeRound() { if (state.mag <= 0) return false; state.mag -= 1; return true; },
     reload() {
-      if (state.reloadLeft > 0 || state.mag === def.mag || state.reserve === 0) return;
+      if (state.reloadLeft > 0 || state.mag === def.mag || state.reserve === 0) return false;
       state.reloadLeft = def.reload;
+      return true;
     },
+    setAiming(aiming) { state.aiming = aiming && state.reloadLeft === 0; },
+    adsFov() { return def.adsFov; },
     spread(speed) {
       const move = Math.min(1, speed / 5.2);
-      return def.spreadStill + move * def.spreadMove + state.bloom * 0.012;
+      const base = def.spreadStill + move * def.spreadMove + state.bloom * 0.012;
+      return state.aiming ? base * 0.45 : base;
     },
     equip(id) {
       def = WEAPONS[id];
@@ -192,6 +220,7 @@ export function createWeapon(camera) {
       state.reserve = def.reserve;
       state.cooldown = 0;
       state.reloadLeft = 0;
+      state.shotIndex = 0;
     },
     refill() {
       state.mag = def.mag;
@@ -201,6 +230,7 @@ export function createWeapon(camera) {
       state.flash = 0;
       state.kick = 0;
       state.bloom = 0;
+      state.shotIndex = 0;
     },
   };
 }

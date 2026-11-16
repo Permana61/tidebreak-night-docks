@@ -96,12 +96,50 @@ function tracer(from, to) {
   t.life = 0.08;
 }
 
+// Impact sparks: a fixed pool of point bursts, reused — a hit on a wall
+// throws a short orange spray, so every shot leaves a visible mark.
+const sparks = [];
+for (let i = 0; i < 6; i += 1) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(10 * 3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffc46b, size: 0.09, transparent: true, opacity: 0 }));
+  scene.add(pts);
+  sparks.push({ pts, vel: new Float32Array(10 * 3), life: 0 });
+}
+function spark(point, normal) {
+  const s = sparks.find((x) => x.life <= 0) ?? sparks[0];
+  const p = s.pts.geometry.attributes.position;
+  for (let i = 0; i < 10; i += 1) {
+    p.setXYZ(i, point.x, point.y, point.z);
+    s.vel[i * 3] = (random() - 0.5) * 4 + (normal ? normal.x * 2 : 0);
+    s.vel[i * 3 + 1] = random() * 3 + 1;
+    s.vel[i * 3 + 2] = (random() - 0.5) * 4 + (normal ? normal.z * 2 : 0);
+  }
+  p.needsUpdate = true;
+  s.pts.material.opacity = 1;
+  s.life = 0.25;
+}
+function stepSparks(dt) {
+  for (const s of sparks) {
+    if (s.life <= 0) continue;
+    s.life -= dt;
+    const p = s.pts.geometry.attributes.position;
+    for (let i = 0; i < 10; i += 1) {
+      p.setXYZ(i, p.getX(i) + s.vel[i * 3] * dt, p.getY(i) + s.vel[i * 3 + 1] * dt, p.getZ(i) + s.vel[i * 3 + 2] * dt);
+      s.vel[i * 3 + 1] -= 9 * dt;
+    }
+    p.needsUpdate = true;
+    s.pts.material.opacity = Math.max(0, s.life * 4);
+  }
+}
+
 // Display names for the two teams; the simulation keys stay 'vanguard' and
 // 'cinder' so the state, HUD and bots need no other changes.
 const TEAM_NAMES = { vanguard: 'Tidebreakers', cinder: 'Dockwatch' };
 const TIDE_CALLSIGNS = ['Anchor', 'Buoy', 'Current', 'Harbor', 'Tide'];
 const DOCK_CALLSIGNS = ['Crane', 'Lantern', 'Mast', 'Quay', 'Siren', 'Tug'];
-const LANE_DECK = ['A', 'B', 'MID', 'A', 'B', 'MID'];
+const LANE_DECK = ['A', 'B', 'MID', 'BACK', 'A', 'B'];
 
 function shuffledDeck() {
   const deck = LANE_DECK.slice();
@@ -193,6 +231,7 @@ function endRound(winner, reason) {
   if (state.phase === PHASE.OVER || state.phase === PHASE.MATCH) return;
   state.phase = PHASE.OVER;
   state.winner = winner;
+  state.slowmo = 1.2; // round-end slow motion: the last kill hangs for a beat
   if (winner === 'vanguard') {
     state.score.vanguard += 1;
     state.money += ECONOMY.roundWin;
@@ -202,14 +241,21 @@ function endRound(winner, reason) {
   }
   hud.setScore(state.score.vanguard, state.score.cinder);
   hud.setMoney(state.money);
+  // MVP: the highest kill count on either side, player included.
+  let mvpName = 'You';
+  let mvpKills = state.kills;
+  for (const b of bots.bots) {
+    if (b.kills > mvpKills) { mvpName = b.name; mvpKills = b.kills; }
+  }
+  const mvp = ` MVP: ${mvpName} — ${mvpKills} elimination${mvpKills === 1 ? '' : 's'}.`;
   hud.feedLine(`${TEAM_NAMES[winner]} takes the round — ${reason}`);
   if (document.pointerLockElement) document.exitPointerLock();
   if (state.score.vanguard >= state.winsToTake || state.score.cinder >= state.winsToTake) {
     state.phase = PHASE.MATCH;
     state.matchWinner = winner;
-    hud.showOverlay('match', `${TEAM_NAMES[winner]} wins the match ${state.score.vanguard} — ${state.score.cinder}.`);
+    hud.showOverlay('match', `${TEAM_NAMES[winner]} wins the match ${state.score.vanguard} — ${state.score.cinder}.${mvp}`);
   } else {
-    hud.showOverlay('round', `${TEAM_NAMES[winner]} takes round ${state.round} — ${reason}.`);
+    hud.showOverlay('round', `${TEAM_NAMES[winner]} takes round ${state.round} — ${reason}.${mvp}`);
   }
 }
 
@@ -249,13 +295,14 @@ function damageBot(bot, amount, part, byPlayer) {
   const killed = bots.damage(bot, amount);
   if (byPlayer) {
     hud.hitMarker(killed);
+    hud.showDamage(amount, killed);
     audio.hit();
     if (killed) {
       audio.kill();
       state.kills += 1;
       state.money += ECONOMY.kill;
       hud.setMoney(state.money);
-      hud.feedLine(`You eliminated ${bot.name}${part === 'head' ? ' (headshot)' : ''}`);
+      hud.feedKill('You', bot.name, 'vanguard', bot.team, part === 'head');
     }
   }
   return killed;
@@ -281,7 +328,10 @@ function resolveBotShot(shot) {
   const dmg = head ? shot.damage * 2 : shot.damage;
   tracer(tmpPos, new THREE.Vector3(tx, 1.3, tz));
   if (target.isPlayer) damagePlayer(dmg, from.name);
-  else damageBot(target, dmg, head ? 'head' : 'torso', false);
+  else if (damageBot(target, dmg, head ? 'head' : 'torso', false)) {
+    from.kills += 1; // the shooter's kill, for the round MVP
+    hud.feedKill(from.name, target.name, from.team, target.team, head);
+  }
 }
 
 function shoot(spread) {
@@ -308,10 +358,13 @@ function shoot(spread) {
       const dmg = Math.round(def.damage * (part === 'head' ? def.headMult : 1));
       damageBot(bot, dmg, part, true);
       hitAny = true;
+    } else {
+      // A wall hit throws impact sparks at the strike point.
+      spark(hit.point, null);
     }
   }
-  weapon.pullTrigger();
-  player.recoil(0.009 + random() * 0.004, (random() * 2 - 1) * 0.004);
+  const kick = weapon.pullTrigger();
+  player.recoil(kick.pitch + (random() * 2 - 1) * 0.002, kick.yaw + (random() * 2 - 1) * 0.002);
   bots.hear(body.position.x, body.position.z, state.elapsed);
   hud.setAmmo(weapon.state.mag, weapon.state.reserve);
   audio.shot();
@@ -399,7 +452,10 @@ function step(dt) {
       const d = grenades.damageAt(boom.x, boom.z, t.pos.x, t.pos.z);
       if (d <= 0) continue;
       if (t.isPlayer) damagePlayer(d, 'Frag grenade');
-      else damageBot(t, d, 'torso', true);
+      else if (damageBot(t, d, 'torso', boom.owner === null)) {
+        // A bot's frag credits its thrower for the round MVP.
+        if (boom.owner && boom.owner !== null) boom.owner.kills += 1;
+      }
     }
   }
 
@@ -417,7 +473,13 @@ function step(dt) {
       bot.wp = 0;
     }
     const shotEv = bots.stepBot(bot, dt, state.elapsed, me, enemies, state.phase);
-    if (shotEv) resolveBotShot(shotEv);
+    if (shotEv && shotEv.grenade) {
+      // A bot spends its one frag: lob it from the bot toward its target.
+      tmpPos.set(bot.pos.x, 1.45, bot.pos.z);
+      tmpDir.set(shotEv.target.pos.x - bot.pos.x, 0.5, shotEv.target.pos.z - bot.pos.z).normalize();
+      grenades.throwGrenade(tmpPos, tmpDir, bot);
+      audio.beep();
+    } else if (shotEv) resolveBotShot(shotEv);
     // A Dockwatch bot standing on the planted spike defuses it in 4 s.
     if (bot.team === 'cinder' && state.phase === PHASE.PLANTED) {
       const near = Math.hypot(bot.pos.x - state.bomb.x, bot.pos.z - state.bomb.z) < 2.2;
@@ -441,14 +503,26 @@ function step(dt) {
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
+  // Round-end slow motion: the world runs at a third speed for a beat.
+  let dt = rawDt;
+  if (state.slowmo > 0) { state.slowmo -= rawDt; dt = rawDt * 0.35; }
   if (!frozen) {
     const look = input.takeLook();
     player.look(look.x, look.y);
+    // Aim-down-sights: right mouse zooms the view and centres the gun.
+    const aiming = input.state.aiming && (state.phase === PHASE.LIVE || state.phase === PHASE.PLANTED) && me.alive;
+    weapon.setAiming(aiming);
+    hud.setAiming(aiming);
+    const targetFov = aiming ? weapon.adsFov() : 74;
+    if (Math.abs(camera.fov - targetFov) > 0.1) {
+      camera.fov += (targetFov - camera.fov) * Math.min(1, rawDt * 18);
+      camera.updateProjectionMatrix();
+    }
     if (state.phase === PHASE.LIVE || state.phase === PHASE.PLANTED) {
       if (input.state.firing && weapon.ready() && me.alive) shoot(weapon.spread(player.groundSpeed()));
-      if (input.state.keys.has('KeyR')) weapon.reload();
+      if (input.state.keys.has('KeyR') && weapon.reload()) audio.reload();
       if (input.takePressed('KeyG')) throwGrenade();
     }
     if (state.phase === PHASE.BUY) {
@@ -465,6 +539,9 @@ function frame(now) {
     }
     if (accumulator > FIXED_STEP * 5) accumulator = 0;
     syncCamera();
+    hud.setCrosshair(weapon.spread(player.groundSpeed()));
+    world.update(dt, state.elapsed);
+    stepSparks(dt);
     for (const t of tracers) {
       if (t.life > 0) {
         t.life -= dt;
@@ -554,11 +631,11 @@ function runShot(name) {
     body.position.set(-6, 0, 6);
     settle(30);
     const enemies = bots.bots.filter((b) => b.team === 'cinder' && b.alive).slice(0, 3);
-    const spots = [[1, 0], [4, -2], [7, -1]]; // open mid ground, clear of the container stack
+    const spots = [[-2, 3], [2, 2], [5, 1]]; // open mid ground, south of the container stack
     enemies.forEach((enemy, i) => { enemy.pos.set(spots[i][0], 0, spots[i][1]); });
     bots.sync();
     if (enemies.length > 0) {
-      aimAt(new THREE.Vector3(4, 1.3, -2));
+      aimAt(new THREE.Vector3(2, 1.3, 2));
       shoot(0);
       settle(6);
       // Staged capture: fade the shot tracer so it does not read as a

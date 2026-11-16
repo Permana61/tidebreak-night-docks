@@ -30,11 +30,13 @@ export function createHud() {
   const hitmarker = $('hitmarker');
   const crosshair = $('crosshair');
   const damage = $('damage');
+  const dmgNumber = $('dmg-number');
   const plantBar = $('plant-bar');
   const plantWrap = $('plant-wrap');
   const buy = $('buy');
   let hitTimer = 0;
   let dmgTimer = 0;
+  let dmgNumTimer = 0;
   let last = {};
 
   function setText(el, key, value) {
@@ -57,6 +59,29 @@ export function createHud() {
     setWeapon(name) { setText(weaponName, 'wpn', name); },
     setBomb(text, cls) { setText(bombStatus, 'bomb', text); bombStatus.className = cls || ''; },
     setCrosshair(spread) { crosshair.style.setProperty('--gap', `${4 + spread * 400}px`); },
+    setAiming(aiming) { crosshair.classList.toggle('aiming', aiming); },
+    // Floating damage number beside the crosshair: the exact damage of the
+    // last hit, in amber, red on a kill.
+    showDamage(dmg, killed) {
+      dmgNumber.textContent = `−${dmg}`;
+      dmgNumber.classList.toggle('kill', killed);
+      dmgNumber.style.left = `${50 + (Math.random() * 6 - 3)}%`;
+      dmgNumber.style.top = `${46 + (Math.random() * 4 - 2)}%`;
+      dmgNumber.classList.add('on');
+      clearTimeout(dmgNumTimer);
+      dmgNumTimer = setTimeout(() => dmgNumber.classList.remove('on'), 420);
+    },
+    // Team-coloured kill line: killer in their team colour, victim in
+    // theirs, a skull and "HEADSHOT" when it was one.
+    feedKill(killer, victim, killerTeam, victimTeam, headshot) {
+      const line = document.createElement('div');
+      const kc = killerTeam === 'vanguard' ? 'var(--teal)' : 'var(--ember)';
+      const vc = victimTeam === 'vanguard' ? 'var(--teal)' : 'var(--ember)';
+      line.innerHTML = `<b style="color:${kc}">${killer}</b> ☠ <b style="color:${vc}">${victim}</b>${headshot ? ' <span style="color:var(--accent)">HEADSHOT</span>' : ''}`;
+      feed.prepend(line);
+      while (feed.children.length > 4) feed.removeChild(feed.lastChild);
+      setTimeout(() => line.remove(), 6000);
+    },
     hitMarker(killed, holdMs = 90) {
       hitmarker.classList.add('on');
       hitmarker.style.transform = killed ? 'translate(-50%, -50%) rotate(45deg) scale(1.25)' : '';

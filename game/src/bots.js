@@ -64,6 +64,9 @@ export function createBots(scene, world, rng) {
       state: 'route', target: null, lastSeen: null, lastSeenAt: -99,
       cooldown: 0, burst: 0, burstAt: 0, hearAt: -99, hearPos: null,
       planting: 0, defusing: 0, speed: SPEED * (0.9 + rng() * 0.2), home: [spawn[0], spawn[1]],
+      // Tactics: peek-strafe state, aim-settle timer, one frag per round,
+      // flank role, and a kill count for the round MVP.
+      peekT: 0, peekDir: 1, aimT: 0, grenadeUsed: false, flank: false, kills: 0,
     };
     torso.userData.bot = bot; torso.userData.part = 'torso';
     head.userData.bot = bot; head.userData.part = 'head';
@@ -114,18 +117,44 @@ export function createBots(scene, world, rng) {
       bot.planting = 0;
       bot.defusing = 0;
       bot.cooldown = 0;
+      bot.peekT = 0;
+      bot.aimT = 0;
+      bot.grenadeUsed = false;
+      bot.flank = false;
+      bot.kills = 0;
     }
   }
 
   // Re-deal lanes at the start of a round: each bot draws a fresh route key
-  // from the shuffled deck, so no two rounds play the same lane split.
+  // from the shuffled deck, so no two rounds play the same lane split. The
+  // first Dockwatch bot draws the Back Lane as the flanker: it moves faster,
+  // never holds at waypoints, and comes around behind the attackers.
   function assignRoutes(keys) {
+    let flankerSet = false;
     for (let i = 0; i < bots.length; i += 1) {
       const bot = bots[i];
       bot.route = ROUTES[keys[i % keys.length]].slice();
       bot.wp = 0;
       bot.holdUntil = 0;
+      bot.flank = false;
+      if (bot.team === 'cinder' && !flankerSet && keys[i % keys.length] === 'BACK') {
+        bot.flank = true;
+        flankerSet = true;
+      }
     }
+    if (!flankerSet) {
+      const defender = bots.find((b) => b.team === 'cinder');
+      if (defender) { defender.route = ROUTES.BACK.slice(); defender.wp = 0; defender.flank = true; }
+    }
+  }
+
+  // A step is walkable when no collider box covers it at body height.
+  function blocked(x, z) {
+    for (const c of world.colliders) {
+      if (x > c.min.x - 0.35 && x < c.max.x + 0.35 && z > c.min.z - 0.35 && z < c.max.z + 0.35
+        && c.max.y > 0.4 && c.min.y < 1.7) return true;
+    }
+    return false;
   }
 
   // One bot, one fixed step. Returns a shot event for main to resolve, or null.
@@ -144,13 +173,32 @@ export function createBots(scene, world, rng) {
     else if (bot.hearAt > 0 && time - bot.hearAt < 2 && bot.hearPos) {
       target = { pos: bot.hearPos, alive: true, isNoise: true };
     }
+    // A freshly acquired target costs the bot an aim-settle beat.
+    const freshTarget = target && !target.isNoise && !bot.target;
     bot.target = target && !target.isNoise ? target : null;
+    if (freshTarget) bot.aimT = 0.35;
 
     if (target && !target.isNoise) {
       bot.state = 'engage';
       const dx = target.pos.x - bot.pos.x;
       const dz = target.pos.z - bot.pos.z;
       bot.yaw = Math.atan2(-dx, -dz);
+      // Aim-settle: a bot that just acquired its target takes a beat to aim
+      // before its first shot, so a player who peeks first wins the duel.
+      if (bot.aimT > 0) { bot.aimT -= dt; return null; }
+      // Peek-strafe: shuffle sideways while firing so the bot is a moving
+      // target, but only into open ground (never inside a wall).
+      bot.peekT -= dt;
+      if (bot.peekT <= 0) { bot.peekDir = rng() < 0.5 ? -1 : 1; bot.peekT = 0.35 + rng() * 0.35; }
+      const strafeX = bot.pos.x + (-dz / (best || 1)) * bot.peekDir * bot.speed * 0.45 * dt;
+      const strafeZ = bot.pos.z + (dx / (best || 1)) * bot.peekDir * bot.speed * 0.45 * dt;
+      if (!blocked(strafeX, strafeZ)) { bot.pos.x = strafeX; bot.pos.z = strafeZ; }
+      // Utility: at long range a bot spends its one frag on the enemy's
+      // position instead of duelling at a disadvantage.
+      if (!bot.grenadeUsed && best > 12 && rng() < 0.006) {
+        bot.grenadeUsed = true;
+        return { shooter: bot, target, grenade: true };
+      }
       // Fire in bursts; accuracy improves when the bot stands still to aim.
       if (bot.cooldown === 0 && best < 30) {
         bot.cooldown = 0.16 + rng() * 0.12;
@@ -160,20 +208,37 @@ export function createBots(scene, world, rng) {
       }
       return null;
     }
+    // Heard a shot but sees nobody: walk toward the noise to investigate,
+    // stopping at the first wall.
+    if (target && target.isNoise && bot.hearPos) {
+      bot.state = 'investigate';
+      const dx = bot.hearPos.x - bot.pos.x;
+      const dz = bot.hearPos.z - bot.pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 1.2) {
+        bot.yaw = Math.atan2(-dx, -dz);
+        const nx = bot.pos.x + (dx / dist) * bot.speed * dt;
+        const nz = bot.pos.z + (dz / dist) * bot.speed * dt;
+        if (!blocked(nx, nz)) { bot.pos.x = nx; bot.pos.z = nz; }
+        return null;
+      }
+      bot.hearAt = -99;
+    }
     // No target: walk the route, pausing to hold angles at waypoints.
+    // The flanker never holds: it keeps moving around the back.
     bot.state = 'route';
-    if (time < bot.holdUntil) return null;
+    if (time < bot.holdUntil && !bot.flank) return null;
     const wp = WAYPOINTS[bot.route[bot.wp]];
     const dx = wp.x - bot.pos.x;
     const dz = wp.z - bot.pos.z;
     const dist = Math.hypot(dx, dz);
     if (dist < 0.6) {
       bot.wp = Math.min(bot.wp + 1, bot.route.length - 1);
-      bot.holdUntil = time + 1.2 + rng() * 1.6;
+      bot.holdUntil = bot.flank ? 0 : time + 1.2 + rng() * 1.6;
       return null;
     }
     bot.yaw = Math.atan2(-dx, -dz);
-    const step = bot.speed * dt;
+    const step = bot.speed * (bot.flank ? 1.15 : 1) * dt;
     bot.pos.x += (dx / dist) * step;
     bot.pos.z += (dz / dist) * step;
     return null;

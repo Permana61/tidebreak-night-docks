@@ -18,6 +18,7 @@ export function createState() {
     message: '',
     messageAt: 0,
     elapsed: 0,
+    slowmo: 0, // round-end slow motion, seconds remaining
     winner: null,
     matchWinner: null,
   };
